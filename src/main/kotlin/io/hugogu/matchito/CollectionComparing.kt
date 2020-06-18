@@ -1,10 +1,39 @@
 package io.hugogu.matchito
 
 data class AssociationResult<T>(
-    val leftOnly: Iterable<T>,
-    val rightOnly: Iterable<T>,
-    val matches: Iterable<Pair<T, T>>
-)
+    val leftOnly: Collection<T>,
+    val rightOnly: Collection<T>,
+    val matches: List<Pair<T, T>>
+) {
+    fun thenMatchProperties(vararg getProperties: (T) -> Pair<String, Comparable<*>>) = thenMatchBy {
+        getProperties.map { getProperty -> getProperty(it) }.toMap()
+    }
+
+    fun thenMatchBy(getProperties: (T) -> Map<String, Comparable<*>>) =
+        ListPropertyMatchingResult(leftOnly, rightOnly, matches.map { it.compareWith(getProperties) })
+}
+
+data class PropertyMatchingResult<T>(
+    val left: T,
+    val right: T,
+    val unequalProperties: Set<String>
+) {
+    fun fullyMatch() = unequalProperties.isEmpty()
+}
+
+data class ListPropertyMatchingResult<T>(
+    val leftOnly: Collection<T>,
+    val rightOnly: Collection<T>,
+    val matches: List<PropertyMatchingResult<T>>
+) {
+    val fullMatches by lazy(LazyThreadSafetyMode.NONE) {
+        matches.filter { it.fullyMatch() }
+    }
+
+    val partialMatches by lazy(LazyThreadSafetyMode.NONE) {
+        matches.filter { !it.fullyMatch() }
+    }
+}
 
 data class GroupingResult<K, V>(
     val leftOnly: Map<K, List<V>>,
@@ -37,6 +66,17 @@ data class ComparingList<T>(
 
         return GroupingResult(leftMap, rightMap, commonValues)
     }
+}
+
+fun <T> Pair<T, T>.compareWith(getProperties: (T) -> Map<String, Comparable<*>>) = run {
+    val leftProperties = getProperties(first)
+    val rightProperties = getProperties(second)
+    check(leftProperties.size == rightProperties.size)
+    check(leftProperties.keys == rightProperties.keys)
+    val unequalProperties = leftProperties.keys.filter { key ->
+        compareValues(leftProperties[key], rightProperties[key]) != 0
+    }
+    PropertyMatchingResult(first, second, unequalProperties.toSet())
 }
 
 fun <T> compare(left: Iterable<T>, right: Iterable<T>) = ComparingList(left, right)
