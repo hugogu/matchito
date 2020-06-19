@@ -1,10 +1,7 @@
 package io.hugogu.matchito
 
-import org.hamcrest.Matchers.contains
 import org.hamcrest.MatcherAssert.assertThat
-import org.hamcrest.Matchers.containsInAnyOrder
-import org.hamcrest.Matchers.hasProperty
-import org.hamcrest.Matchers.hasSize
+import org.hamcrest.Matchers.*
 import org.junit.jupiter.api.Test
 import java.time.LocalDate
 import java.util.UUID
@@ -17,7 +14,10 @@ class CollectionComparingTest {
         val association = compare(left, right).associateBy { it }
         assertThat(association.leftOnly, contains(1))
         assertThat(association.rightOnly, contains(5))
-        assertThat(association.matches, contains(2 to 2, 3 to 3))
+        assertThat(association.matches.values, contains(
+            ValuePair(2, 2),
+            ValuePair(3, 3)
+        ))
     }
 
     @Test
@@ -42,12 +42,20 @@ class CollectionComparingTest {
         assertThat(matches.leftOnly, hasSize(0))
         assertThat(matches.rightOnly, hasSize(0))
         assertThat(matches.fullMatches, hasSize(1))
-        assertThat(matches.fullMatches.flatMap { it.unequalProperties }, hasSize(0))
+        assertThat(matches.fullMatches.flatMap { it.unequalProperties.entries }, hasSize(0))
         assertThat(matches.partialMatches, hasSize(2))
-        assertThat(matches.partialMatches, containsInAnyOrder(
-            hasProperty("unequalProperties", contains("name")),
-            hasProperty("unequalProperties", contains("birthday"))
-        ))
+        assertThat(
+            matches.partialMatches, containsInAnyOrder(
+                hasProperty(
+                    "unequalProperties",
+                    hasEntry("name", ValuePair("A", "a"))
+                ),
+                hasProperty(
+                    "unequalProperties",
+                    hasEntry("birthday", ValuePair(LocalDate.parse("2020-04-05"), LocalDate.parse("2020-04-06")))
+                )
+            )
+        )
     }
 
     data class Person(

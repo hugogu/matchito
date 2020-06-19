@@ -1,24 +1,33 @@
 package io.hugogu.matchito
 
-data class AssociationResult<T>(
+data class AssociationResult<T, K>(
     val leftOnly: Collection<T>,
     val rightOnly: Collection<T>,
-    val matches: List<Pair<T, T>>
+    val matches: Map<K, ValuePair<T>>
 ) {
     fun thenMatchProperties(vararg getProperties: (T) -> Pair<String, Comparable<*>>) = thenMatchBy {
         getProperties.map { getProperty -> getProperty(it) }.toMap()
     }
 
     fun thenMatchBy(getProperties: (T) -> Map<String, Comparable<*>>) =
-        ListPropertyMatchingResult(leftOnly, rightOnly, matches.map { it.compareWith(getProperties) })
+        ListPropertyMatchingResult(leftOnly, rightOnly, matches.values.map { it.compareWith(getProperties) })
 }
 
-data class PropertyMatchingResult<T>(
+data class PropertyMatchingResult<out T>(
     val left: T,
     val right: T,
-    val unequalProperties: Set<String>
+    val unequalProperties: Map<String, ValuePair<Any>>
 ) {
     fun fullyMatch() = unequalProperties.isEmpty()
+}
+
+data class ValuePair<out T>(
+    val leftValue: T?,
+    val rightValue: T?
+) {
+    fun isDifferent() = leftValue != rightValue
+
+    fun compareWith(getProperties: (T) -> Map<String, Comparable<*>>) = compare(leftValue!!, rightValue!!, getProperties)
 }
 
 data class ListPropertyMatchingResult<T>(
@@ -38,20 +47,17 @@ data class ListPropertyMatchingResult<T>(
 data class GroupingResult<K, V>(
     val leftOnly: Map<K, List<V>>,
     val rightOnly: Map<K, List<V>>,
-    val matches: Map<K, Pair<List<V>, List<V>>>
+    val matches: Map<K, ValuePair<List<V>>>
 )
 
 data class ComparingList<T>(
     val left: Iterable<T>,
     val right: Iterable<T>
 ) {
-    fun <K> associateBy(getKey: (T) -> K): AssociationResult<T> {
+    fun <K> associateBy(getKey: (T) -> K): AssociationResult<T, K> {
         val leftMap = left.associateByTo(mutableMapOf(), getKey)
         val rightMap = right.associateByTo(mutableMapOf(), getKey)
-        val commonKeys = leftMap.keys intersect rightMap.keys
-        val commonValues = commonKeys.map {
-            leftMap.remove(it)!! to rightMap.remove(it)!!
-        }
+        val commonValues = extractCommon(leftMap, rightMap)
 
         return AssociationResult(leftMap.values, rightMap.values, commonValues)
     }
@@ -59,24 +65,27 @@ data class ComparingList<T>(
     fun <K> groupBy(getKey: (T) -> K): GroupingResult<K, T> {
         val leftMap = left.groupByTo(mutableMapOf(), getKey)
         val rightMap = right.groupByTo(mutableMapOf(), getKey)
-        val commonKeys = leftMap.keys intersect rightMap.keys
-        val commonValues = commonKeys.map {
-            it to (leftMap.remove(it)!! to rightMap.remove(it)!!)
-        }.toMap()
+        val commonValues = extractCommon(leftMap, rightMap)
 
         return GroupingResult(leftMap, rightMap, commonValues)
     }
 }
 
-fun <T> Pair<T, T>.compareWith(getProperties: (T) -> Map<String, Comparable<*>>) = run {
-    val leftProperties = getProperties(first)
-    val rightProperties = getProperties(second)
+fun <K, V> extractCommon(leftMap: MutableMap<K, V>, rightMap: MutableMap<K, V>) =
+    (leftMap.keys intersect rightMap.keys).map {
+        it to ValuePair<V>(leftMap.remove(it), rightMap.remove(it))
+    }.toMap()
+
+fun <T> compare(left: T, right: T, getProperties: (T) -> Map<String, Comparable<*>>) = run {
+    val leftProperties = getProperties(left)
+    val rightProperties = getProperties(right)
     check(leftProperties.size == rightProperties.size)
     check(leftProperties.keys == rightProperties.keys)
-    val unequalProperties = leftProperties.keys.filter { key ->
-        compareValues(leftProperties[key], rightProperties[key]) != 0
-    }
-    PropertyMatchingResult(first, second, unequalProperties.toSet())
+    val unequalProperties = leftProperties.keys
+        .map { it to ValuePair<Any>(leftProperties[it], rightProperties[it]) }
+        .filter { it.second.isDifferent() }
+        .toMap()
+    PropertyMatchingResult(left, right, unequalProperties)
 }
 
 fun <T> compare(left: Iterable<T>, right: Iterable<T>) = ComparingList(left, right)
