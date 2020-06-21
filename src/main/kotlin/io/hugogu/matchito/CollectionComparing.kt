@@ -69,7 +69,18 @@ data class ComparingList<T>(
 
         return GroupingResult(leftMap, rightMap, commonValues)
     }
+
+    fun matchSingleBy(comparator: Comparator<T>): Iterable<ValuePair<T>> {
+        return left.mapNotNull { l ->
+            right.singleOrNull { r ->
+                // If there are more than one matches, leave them as it is, not taken as pair.
+                comparator.areEqual(l, r) && left.count { comparator.areEqual(it, r) } == 1
+            }?.let { r -> ValuePair(l, r) }
+        }
+    }
 }
+
+fun <T> Comparator<T>.areEqual(l: T, r: T) = compare(l, r) == 0
 
 fun <K, V> extractCommon(leftMap: MutableMap<K, V>, rightMap: MutableMap<K, V>) =
     (leftMap.keys intersect rightMap.keys).map {
